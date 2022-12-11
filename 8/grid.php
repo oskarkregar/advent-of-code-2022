@@ -39,6 +39,11 @@ class Grid
 
                 $this->checkIfVisible($tree);
                 $this->trees[] = $tree;
+
+                // Add also to visible trees if it is visible
+                if ($tree->getVisible()) {
+                    $this->visible_trees[] = $tree;
+                }
             }
         }
 
@@ -90,9 +95,10 @@ class Grid
         }
     }
 
-    private function checkIfVisible(Tree $tree)
+    private function checkIfVisible(Tree &$tree)
     {
         $coordinates = $tree->getCurrentCoordinates();
+        $tree->setVisible(false);
 
         // Already added as corners
         if ($coordinates[0] === 0 || $coordinates[1] === 0 || $coordinates[0] === (count($this->grid) - 1) || $coordinates[1] === (count($this->grid[0]) - 1)) {
@@ -104,8 +110,7 @@ class Grid
         // Bigger than biggest on left
         if ($tree->getHeight() > $this->row_biggest[$coordinates[0]]->getHeight()) {
             if (!$this->checkIfAlready($tree->getRealCoordinates())) {
-                $this->trees[] = $tree->setVisible(true);
-                $this->visible_trees[] = $tree;
+                $tree->setVisible(true);
             }
 
             $this->row_biggest[$coordinates[0]] = $tree;
@@ -114,8 +119,7 @@ class Grid
         // Bigger than biggest on top
         if ($tree->getHeight() > $this->column_biggest[$coordinates[1]]->getHeight()) {
             if (!$this->checkIfAlready($tree->getRealCoordinates())) {
-                $this->trees[] = $tree->setVisible(true);
-                $this->visible_trees[] = $tree;
+                $tree->setVisible(true);
             }
 
             $this->column_biggest[$coordinates[1]] = $tree;
