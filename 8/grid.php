@@ -12,11 +12,8 @@ class Grid
     private array $visible_trees = [];
     private bool $reversed = false;
 
-    private bool $debug;
-
-    public function __construct(string $grid, bool $debug = false)
+    public function __construct(string $grid)
     {
-        $this->debug = $debug;
         $this->readGrid($grid);
     }
 
