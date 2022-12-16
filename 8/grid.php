@@ -2,17 +2,20 @@
 
 $grid = (new Grid(file_get_contents("data.txt")))->findVisible();
 echo "THERE ARE " . count($grid->getVisible()) . " TREES VISIBLE IN A GRID" . PHP_EOL;
-echo "THERE ARE " . count($grid->getTrees()) . " TREES IN A GRID";
-// print_r($grid->getTrees());
+echo "THERE ARE " . count(array_merge(...$grid->getGrid())) . " TREES IN A GRID" . PHP_EOL;
+
+$flattened_grid = array_merge(...$grid->getGrid());
+echo "SCENIC SCORE IS: " . max(array_map(fn ($tree) => $tree->calculateScenicScore()->getScenicScore(), $flattened_grid));
 
 class Grid
 {
     private array $row_biggest;
     private array $column_biggest;
     private array $grid;
-    private array $trees = [];
     private array $visible_trees = [];
     private bool $reversed = false;
+    private string $left_right = "left";
+    private string $top_bottom = "top";
 
     public function __construct(string $grid)
     {
@@ -21,7 +24,7 @@ class Grid
 
     public function findVisible()
     {
-        $this->addCorners();
+        // $this->addCorners();
         $this->scanGrid();
         $this->reverseGrid();
         $this->scanGrid();
@@ -34,20 +37,16 @@ class Grid
         $this->setStartingBiggest();
 
         // Create first iterator through rows and check both sides
-        foreach ($this->grid as $row) {
-            foreach ($row as $tree) {
+        foreach ($this->grid as &$row) {
+            foreach ($row as &$tree) {
                 $current_coordinates = ($this->reversed) ? $this->reverseCoordinates($tree->getRealCoordinates()) : $tree->getRealCoordinates();
                 $tree->setCurrentCoordinates($current_coordinates);
 
                 $this->checkIfVisible($tree);
-
-                // Add tree only once
-                if (!$this->reversed) {
-                    $this->trees[] = $tree;
-                }
+                $this->setViewingDistance($tree);
 
                 // Add also to visible trees if it is visible
-                if ($tree->getVisible()) {
+                if (count($tree->getVisibleFrom()) > 0 && !$this->checkIfAlreadyAddedToVisible($tree->getRealCoordinates())) {
                     $this->visible_trees[] = $tree;
                 }
             }
@@ -58,9 +57,20 @@ class Grid
 
     private function reverseGrid()
     {
+        // Reset current coordinates to reversed
+        foreach ($this->grid as $row) {
+            foreach ($row as &$tree) {
+                $tree->setCurrentCoordinates($this->reverseCoordinates($tree->getRealCoordinates()));
+            }
+        }
+
         // Reverse grid
         $this->grid = array_map("array_reverse", $this->grid);
         $this->grid = array_reverse($this->grid);
+
+        // Set sides
+        $this->left_right = "right";
+        $this->top_bottom = "bottom";
 
         $this->reversed = true;
     }
@@ -68,11 +78,6 @@ class Grid
     public function getGrid()
     {
         return $this->grid;
-    }
-
-    public function getTrees()
-    {
-        return $this->trees;
     }
 
     public function getVisible()
@@ -119,77 +124,75 @@ class Grid
     private function checkIfVisible(Tree &$tree)
     {
         $coordinates = $tree->getCurrentCoordinates();
-        $tree->setVisible(false);
 
         // Already added as corners
-        if ($coordinates[0] === 0 || $coordinates[1] === 0 || $coordinates[0] === (count($this->grid) - 1) || $coordinates[1] === (count($this->grid[0]) - 1)) {
-            return;
+        if ($coordinates[0] === 0) {
+            $tree->setVisibleFrom($this->top_bottom);
+        }
+
+        if ($coordinates[1] === 0) {
+            $tree->setVisibleFrom($this->left_right);
         }
 
         // Check if current element is visible from left and top as this is how we iterate
 
         // Bigger than biggest on left
-
-        $side = ($this->reversed) ? "right" : "left";
-
         if ($tree->getHeight() > $this->row_biggest[$coordinates[0]]->getHeight()) {
-            if (!$this->checkIfAlreadyInVisible($tree->getRealCoordinates())) {
-                $tree->setVisible(true);
-            }
-
-            // Set viewing distance to the end of grid
-            $tree->setViewingDistance($side, $coordinates[0]);
+            $tree->setVisibleFrom($this->left_right);
 
             $this->row_biggest[$coordinates[0]] = $tree;
-        } else {
-            $highest_in_row = $this->row_biggest[$coordinates[0]];
-            $highest_in_row_coordinates = $highest_in_row->getCurrentCoordinates();
-
-            // Set viewing distance to the highest in the row
-            $tree->setViewingDistance($side, $coordinates[0] - $highest_in_row_coordinates[0]);
         }
 
         // Bigger than biggest on top
-
-        $side = ($this->reversed) ? "bottom" : "top";
-
         if ($tree->getHeight() > $this->column_biggest[$coordinates[1]]->getHeight()) {
-            if (!$this->checkIfAlreadyInVisible($tree->getRealCoordinates())) {
-                $tree->setVisible(true);
-            }
-
-            // Set viewing distance to the end of grid
-            $tree->setViewingDistance($side, $coordinates[1]);
+            $tree->setVisibleFrom($this->top_bottom);
 
             $this->column_biggest[$coordinates[1]] = $tree;
-        } else {
-            $highest_in_column = $this->column_biggest[$coordinates[1]];
-            $highest_in_column_coordinates = $highest_in_column->getCurrentCoordinates();
-
-            // Set viewing distance to the highest in the column
-            $tree->setViewingDistance($side, $coordinates[1] - $highest_in_column_coordinates[1]);
         }
     }
 
-    private function addCorners()
+    private function setViewingDistance(Tree &$tree)
     {
-        for ($i = 0; $i < count($this->grid); $i++) {
-            // Column corners
-            $this->visible_trees[] = $this->grid[0][$i]->setVisible(true);
-            $this->visible_trees[] = $this->grid[count($this->grid) - 1][$i]->setVisible(true);
+        if (in_array($this->left_right, $tree->getVisibleFrom())) {
+            // Set viewing distance to the end of grid
+            $tree->setViewingDistance($this->left_right, $tree->getCurrentCoordinates()[1]);
+        } else {
+            // Go back in same row to the one that we see last
+            $row = $this->grid[$tree->getCurrentCoordinates()[0]];
 
-            // Skip last and first as they were already added as column corners
-            if ($i === 0 || $i === count($this->grid) - 1) {
-                continue;
+            // Take slice to current column
+            $to_current = array_slice($row, 0, $tree->getCurrentCoordinates()[1]);
+
+            // Reverse array and go set counter of visible trees
+            foreach (array_reverse($to_current) as $index => $row_tree) {
+                if ($row_tree->getHeight() >= $tree->getHeight()) {
+                    $tree->setViewingDistance($this->left_right, $index + 1);
+                    break;
+                }
             }
+        }
 
-            // Row corners
-            $this->visible_trees[] = $this->grid[$i][0]->setVisible(true);
-            $this->visible_trees[] = $this->grid[$i][count($this->grid) - 1]->setVisible(true);
+        if (in_array($this->top_bottom, $tree->getVisibleFrom())) {
+            // Set viewing distance to the end of grid
+            $tree->setViewingDistance($this->top_bottom, $tree->getCurrentCoordinates()[0]);
+        } else {
+            // Go back in same column to the one that we see last
+            $column = array_column($this->grid, $tree->getCurrentCoordinates()[1]);
+
+            // Take slice to current row
+            $to_current = array_slice($column, 0, $tree->getCurrentCoordinates()[0]);
+
+            // Reverse array and go set counter of visible trees
+            foreach (array_reverse($to_current) as $index => $column_tree) {
+                if ($column_tree->getHeight() >= $tree->getHeight()) {
+                    $tree->setViewingDistance($this->top_bottom, $index + 1);
+                    break;
+                }
+            }
         }
     }
 
-    private function checkIfAlreadyInVisible(array $coordinates)
+    private function checkIfAlreadyAddedToVisible(array $coordinates)
     {
         foreach ($this->visible_trees as $tree) {
             if ($coordinates[0] === $tree->getRealCoordinates()[0] && $coordinates[1] === $tree->getRealCoordinates()[1]) {
@@ -210,9 +213,11 @@ class Tree
 {
     private array $coordinates;
     private int $height;
-    private bool $visible;
     private array $real_coordinates;
     private array $viewing_distance;
+    private int $scenic_score;
+
+    private array $visible_from = [];
 
     public function __construct(array $coordinates, int $height, array $real_coordinates)
     {
@@ -241,14 +246,14 @@ class Tree
         return $this->height;
     }
 
-    public function getVisible()
+    public function getVisibleFrom()
     {
-        return $this->visible;
+        return $this->visible_from;
     }
 
-    public function setVisible(bool $visible)
+    public function setVisibleFrom(string $side)
     {
-        $this->visible = $visible;
+        $this->visible_from[] = $side;
         return $this;
     }
 
@@ -260,5 +265,16 @@ class Tree
     public function getViewingDistance()
     {
         return $this->viewing_distance;
+    }
+
+    public function calculateScenicScore()
+    {
+        $this->scenic_score = array_reduce($this->viewing_distance, fn ($carry, $distance) => $carry * $distance, 1);
+        return $this;
+    }
+
+    public function getScenicScore()
+    {
+        return $this->scenic_score;
     }
 }
